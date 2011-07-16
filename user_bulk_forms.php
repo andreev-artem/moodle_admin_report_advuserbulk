@@ -2,6 +2,7 @@
 
 require_once($CFG->libdir.'/formslib.php');
 require_once($CFG->libdir.'/datalib.php');
+require_once($CFG->dirroot.'/'.$CFG->admin.'/report/advuserbulk/lib.php');
 
 class user_bulk_action_form extends moodleform {
     function definition() {
@@ -14,7 +15,7 @@ class user_bulk_action_form extends moodleform {
         $plugins = get_list_of_plugins($CFG->admin.'/report/advuserbulk/actions', 'CVS');
         foreach ($plugins as $dir) {
             if (check_action_capabilities($dir)) {
-                $actions[$dir] = get_string('pluginname', 'bulkuseractions_'.$dir, NULL, $CFG->dirroot.'/admin/report/advuserbulk/actions/'.$dir.'/lang/');
+                $actions[$dir] = advuserbulk_get_string('pluginname', ACTIONS_LANG_PREFIX.$dir);
             }
         }
 
@@ -84,7 +85,7 @@ class user_bulk_form extends moodleform {
         $mform->addElement('html', '<div style="white-space: nowrap;">');
         $grp =& $mform->addElement('group', 'usersgrp', get_string('users'), $objs, ' ', false);
         $mform->addElement('html', '</div>');
-        $grp->setHelpButton(array('lists', get_string('users'), 'bulkusers'));
+        $mform->addHelpButton('usersgrp', 'users', 'bulkusers');
 
         $mform->addElement('static', 'comment');
 
@@ -94,7 +95,7 @@ class user_bulk_form extends moodleform {
         $objs[] =& $mform->createElement('submit', 'addall', get_string('addall', 'bulkusers'));
         $objs[] =& $mform->createElement('submit', 'removeall', get_string('removeall', 'bulkusers'));
         $grp =& $mform->addElement('group', 'buttonsgrp', get_string('selectedlist', 'bulkusers'), $objs, array(' ', '<br />'), false);
-        $grp->setHelpButton(array('selectedlist', get_string('selectedlist', 'bulkusers'), 'bulkusers'));
+        $mform->addHelpButton('buttonsgrp', 'selectedlist', 'bulkusers');
 
         $renderer =& $mform->defaultRenderer();
         $template = '<label class="qflabel" style="vertical-align:top">{label}</label> {element}';

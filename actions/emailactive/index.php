@@ -15,13 +15,13 @@ check_action_capabilities('emailactive', true);
 
 $return = $CFG->wwwroot.'/'.$CFG->admin.'/report/advuserbulk/user_bulk.php';
 $langdir = $CFG->dirroot.'/admin/report/advuserbulk/actions/emailactive/lang/';
-$pluginname = 'bulkuseractions_emailactive';
+$pluginname = ACTIONS_LANG_PREFIX.'emailactive';
 
 if (empty($SESSION->bulk_users)) {
     redirect($return);
 }
 
-admin_externalpage_print_header();
+echo $OUTPUT->header();
 
 if ($confirm and confirm_sesskey()) {
     foreach ($SESSION->bulk_users as $user) {
@@ -31,28 +31,30 @@ if ($confirm and confirm_sesskey()) {
 }
 
 if ($mailstop !== false) {
-    $in = implode(',', $SESSION->bulk_users);
-    $userlist = get_records_select_menu('user', "id IN ($in)", 'fullname', 'id,'.sql_fullname().' AS fullname');
+    list($in, $params) = $DB->get_in_or_equal($SESSION->bulk_users);
+    $userlist = $DB->get_records_select_menu('user', "id $in", $params, 'fullname', 'id,'.$DB->sql_fullname().' AS fullname');
     $usernames = implode(', ', $userlist);
-    $confstr = get_string( 'confirm1', $pluginname, NULL, $langdir );
+    $confstr = advuserbulk_get_string('confirm1', $pluginname);
     if ($mailstop == 0) {
-        $confstr .= get_string( 'activate', $pluginname, NULL, $langdir );
+        $confstr .= advuserbulk_get_string('activate', $pluginname);
     } else {
-        $confstr .= get_string( 'deactivate', $pluginname, NULL, $langdir );
+        $confstr .= advuserbulk_get_string('deactivate', $pluginname);
     }
-    $confstr .= get_string( 'confirm2', $pluginname, NULL, $langdir ) . '<br />';
+    $confstr .= advuserbulk_get_string('confirm2', $pluginname) . '<br />';
     $confstr .= $usernames . '?';
     $optionsyes = array();
     $optionsyes['confirm'] = 1;
     $optionsyes['mailstop'] = $mailstop;
     $optionsyes['sesskey'] = sesskey();
-    print_heading(get_string('confirmation', 'admin'));
-    notice_yesno($confstr, 'index.php', $return, $optionsyes, NULL, 'post', 'get');
+    echo $OUTPUT->heading(get_string('confirmation', 'admin'));
+    $formcontinue = new single_button(new moodle_url('index.php', array('confirm' => 1)), get_string('yes'));
+    $formcancel = new single_button(new moodle_url($return), get_string('no'), 'get');
+    echo $OUTPUT->confirm($confstr, $formcontinue, $formcancel);
 } else {
 ?>
 <div id="addmembersform" align=center>
     <form id="emailedform" method="post" action="index.php">
-    <label for="mailstop"><?php echo get_string( 'pluginname', $pluginname, NULL, $langdir ) ?></label>
+    <label for="mailstop"><?php echo advuserbulk_get_string('pluginname', $pluginname) ?></label>
     <br />
     <select name="mailstop" id="mailstop" size="1" >
         <option value=0><?php echo get_string('emailenable') ?></option>
@@ -65,5 +67,5 @@ if ($mailstop !== false) {
 <?php
 }
 
-admin_externalpage_print_footer();
+echo $OUTPUT->footer();
 ?>

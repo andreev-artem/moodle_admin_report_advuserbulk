@@ -9,6 +9,7 @@ require_once($CFG->dirroot.'/'.$CFG->admin.'/report/advuserbulk/lib.php');
 
 $format = optional_param('format', '', PARAM_ALPHA);
 
+require_login();
 admin_externalpage_setup('reportadvuserbulk');
 check_action_capabilities('download', true);
 
@@ -38,7 +39,7 @@ if ($format) {
                     'msn'       => 'msn',
                     'country'   => 'country');
 
-    if ($extrafields = get_records_select('user_info_field')) {
+    if ($extrafields = $DB->get_records('user_info_field')) {
         foreach ($extrafields as $n=>$v){
             $fields['profile_field_'.$v->shortname] = 'profile_field_'.$v->shortname;
         }
@@ -53,26 +54,26 @@ if ($format) {
     die;
 }
 
-admin_externalpage_print_header();
-print_heading(get_string('download', 'admin'));
+echo $OUTPUT->header();
+echo $OUTPUT->heading(get_string('download', 'admin'));
 
-print_box_start();
+echo $OUTPUT->box_start();
 echo '<ul>';
 echo '<li><a href="index.php?format=csv">'.get_string('downloadtext').'</a></li>';
 echo '<li><a href="index.php?format=ods">'.get_string('downloadods').'</a></li>';
 echo '<li><a href="index.php?format=xls">'.get_string('downloadexcel').'</a></li>';
 echo '</ul>';
-print_box_end();
+echo $OUTPUT->box_end();
 
-print_continue($return);
+echo $OUTPUT->continue_button($return);
 
-print_footer();
+echo $OUTPUT->footer();
 
 function user_download_ods($fields) {
-    global $CFG, $SESSION;
+    global $CFG, $SESSION, $DB;
 
     require_once("$CFG->libdir/odslib.class.php");
-    require_once($CFG->dirroot.'/report/advuserbulk/profile/lib.php');
+    require_once($CFG->dirroot.'/user/profile/lib.php');
 
     $filename = clean_filename(get_string('users').'.ods');
 
@@ -90,7 +91,7 @@ function user_download_ods($fields) {
 
     $row = 1;
     foreach ($SESSION->bulk_users as $userid) {
-        if (!$user = get_record('user', 'id', $userid)) {
+        if (!$user = $DB->get_record('user', array('id'=>$userid))) {
             continue;
         }
         $col = 0;
@@ -107,10 +108,10 @@ function user_download_ods($fields) {
 }
 
 function user_download_xls($fields) {
-    global $CFG, $SESSION;
+    global $CFG, $SESSION, $DB;
 
     require_once("$CFG->libdir/excellib.class.php");
-    require_once($CFG->dirroot.'/report/advuserbulk/profile/lib.php');
+    require_once($CFG->dirroot.'/user/profile/lib.php');
 
     $filename = clean_filename(get_string('users').'.xls');
 
@@ -128,7 +129,7 @@ function user_download_xls($fields) {
 
     $row = 1;
     foreach ($SESSION->bulk_users as $userid) {
-        if (!$user = get_record('user', 'id', $userid)) {
+        if (!$user = $DB->get_record('user', array('id'=>$userid))) {
             continue;
         }
         $col = 0;
@@ -145,9 +146,9 @@ function user_download_xls($fields) {
 }
 
 function user_download_csv($fields) {
-    global $CFG, $SESSION;
+    global $CFG, $SESSION, $DB;
 
-    require_once($CFG->dirroot.'/report/advuserbulk/profile/lib.php');
+    require_once($CFG->dirroot.'/user/profile/lib.php');
 
     $filename = clean_filename(get_string('users').'.csv');
 
@@ -157,7 +158,7 @@ function user_download_csv($fields) {
     header("Cache-Control: must-revalidate,post-check=0,pre-check=0");
     header("Pragma: public");
 
-    $delimiter = get_string('listsep');
+    $delimiter = get_string('listsep', 'langconfig');
     $encdelim  = '&#'.ord($delimiter);
 
     $row = array();
@@ -168,7 +169,7 @@ function user_download_csv($fields) {
 
     foreach ($SESSION->bulk_users as $userid) {
         $row = array();
-        if (!$user = get_record('user', 'id', $userid)) {
+        if (!$user = $DB->get_record('user', array('id'=>$userid))) {
             continue;
         }
         profile_load_data($user);
