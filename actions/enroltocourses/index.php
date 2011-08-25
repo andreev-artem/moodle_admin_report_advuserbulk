@@ -18,7 +18,6 @@ $showall        = optional_param('showall', 0, PARAM_BOOL);
 $listadd        = optional_param('add', 0, PARAM_BOOL);
 $listremove     = optional_param('remove', 0, PARAM_BOOL);
 $removeall      = optional_param('removeall', 0, PARAM_BOOL);
-$hidden         = optional_param('hidden', 0, PARAM_BOOL);
 
 admin_externalpage_setup('reportadvuserbulk');
 check_action_capabilities('enroltocourses', true);
@@ -30,8 +29,7 @@ if ($showall) {
 }
 
 $strsearch = get_string('search');
-$langdir = $CFG->dirroot . '/admin/report/advuserbulk/actions/enroltocourses/lang/';
-$pluginname = 'bulkuseractions_enroltocourses';
+$pluginname = ACTIONS_LANG_PREFIX.'enroltocourses';
 
 if (empty($SESSION->bulk_users) || $cancel) {
     redirect($return);
@@ -43,33 +41,35 @@ if (!isset($SESSION->bulk_courses) || $removeall) {
 
 // course selection add/remove actions
 if ($listadd && !empty($allcourses)) {
-    foreach ($allcourses as $course) {
-        if (!in_array($course, $SESSION->bulk_courses)) {
-            $SESSION->bulk_courses[] = $course;
+    foreach ($allcourses as $courseid) {
+        if (!in_array($courseid, $SESSION->bulk_courses)) {
+            $SESSION->bulk_courses[] = $courseid;
         }
     }
 }
 
 if ($listremove && !empty($selcourses)) {
-    foreach ($selcourses as $course) {
-        unset($SESSION->bulk_courses[array_search($course, $SESSION->bulk_courses)]);
+    foreach ($selcourses as $courseid) {
+        unset($SESSION->bulk_courses[array_search($courseid, $SESSION->bulk_courses)]);
     }
 }
 
 // show the confirmation message
 if ($accept) {
+    global $DB;
+
     if (empty($SESSION->bulk_courses)) {
         redirect($return);
     }
 
     // generate user name list
-    $in = implode(',', $SESSION->bulk_users);
-    $userlist = get_records_select_menu('user', "id IN ($in)", 'fullname', 'id,' . sql_fullname() . ' AS fullname');
+    list($in, $params) = $DB->get_in_or_equal($SESSION->bulk_users);
+    $userlist = $DB->get_records_select_menu('user', "id $in", $params, 'fullname', 'id,' . $DB->sql_fullname() . ' AS fullname');
     $usernames = implode('<br />', $userlist);
 
     // generate course name list
     $courselist = array();
-    $courses = get_courses(0, 'c.sortorder ASC', 'c.id, c.fullname');
+    $courses = get_courses('all', 'c.sortorder ASC', 'c.id, c.fullname');
     foreach ($courses as $course) {
         if (in_array($course->id, $SESSION->bulk_courses)) {
             $courselist[] = $course->fullname;
@@ -77,11 +77,11 @@ if ($accept) {
     }
 
     // generate the message
-    $confmsg = get_string('confirmpart1', $pluginname, NULL, $langdir) . '<b>' . $usernames . '</b>';
-    $confmsg .= get_string('confirmpart2', $pluginname, NULL, $langdir);
+    $confmsg = advuserbulk_get_string('confirmpart1', $pluginname) . '<b>' . $usernames . '</b>';
+    $confmsg .= advuserbulk_get_string('confirmpart2', $pluginname);
     $confmsg .= '<b>' . implode('<br />', $courselist) . '</b>';
     if (!empty($groups)) {
-        $confmsg .= get_string('confirmpart3', $pluginname, NULL, $langdir) . '<b>' . s(implode(', ', $groups), false) . '</b>';
+        $confmsg .= advuserbulk_get_string('confirmpart3', $pluginname) . '<b>' . s(implode(', ', $groups), false) . '</b>';
     
         unset($SESSION->groups);
         foreach ($groups as $group) {
@@ -91,67 +91,75 @@ if ($accept) {
 
     // get system roles info and add the selected role to the message
     if ($roleassign != 0) {
-        $role = get_record('role', 'id', $roleassign);
+        $role = $DB->get_record('role', array('id' => $roleassign));
         $rolename = $role->name;
     } else {
-        $rolename = get_string('default', $pluginname, NULL, $langdir);
+        $rolename = advuserbulk_get_string('default', $pluginname);
     }
-    $confmsg .= get_string('confirmpart4', $pluginname, NULL, $langdir) . '<b>' . $rolename . '</b>';
-    if ($hidden) {
-        $confmsg .= ' (' . get_string('hiddenassign') . ')';
-    }
-    $confmsg .= '?';
+    $confmsg .= advuserbulk_get_string('confirmpart4', $pluginname) . '<b>' . $rolename . '</b>?';
 
     $optionsyes['confirm'] = true;
     $optionsyes['roleassign'] = $roleassign;
-    $optionsyes['hidden'] = $hidden;
 
     // print the message
-    admin_externalpage_print_header();
-    print_heading(get_string('confirmation', 'admin'));
-    notice_yesno($confmsg, 'index.php', $return, $optionsyes, NULL, 'post', 'get');
-    admin_externalpage_print_footer();
+    echo $OUTPUT->header();
+    echo $OUTPUT->heading(get_string('confirmation', 'admin'));
+
+    $buttonyes = new single_button(new moodle_url('index.php', $optionsyes), get_string('yes'));
+    $buttonno = new single_button(new moodle_url($return), get_string('no'), 'get');
+    echo $OUTPUT->confirm($confmsg, $buttonyes, $buttonno);
+
+    echo $OUTPUT->footer();
     die;
 }
 
 // action confirmed, perform it
 if ($confirm) {
+    require_once($CFG->dirroot . '/group/lib.php');
+
     if (empty($SESSION->bulk_courses)) {
         redirect($return);
     }
 
     // for each course, get the default role if needed and check the selected group
-    foreach ($SESSION->bulk_courses as $course) {
-        $context = get_context_instance(CONTEXT_COURSE, $course);
-        $in = implode(',', $SESSION->bulk_users);
-        if ($roleassign == 0) {
-            $defrole = get_default_course_role($context);
-            $roleassign = $defrole->id;
-        }
-
+    foreach ($SESSION->bulk_courses as $courseid) {
         $groupids = array();
         foreach ($SESSION->groups as $group) {
-            $groupid = groups_get_group_by_name($course, stripslashes($group));
+            $groupid = groups_get_group_by_name($courseid, stripslashes($group));
             if ($groupid) {
                 $groupids[] = $groupid;
             }
         }
-        // for each user, enrol them to the course with the selected role,
-        // and add to the selected group if available
-        if ($rs = get_recordset_select('user', "id IN ($in)")) {
-            while ($user = rs_fetch_next_record($rs)) {
-                role_assign($roleassign, $user->id, 0, $context->id, 0, 0, $hidden);
 
-                foreach ($groupids as $groupid) {
-                    groups_add_member($groupid, $user->id);
-                }
+        $problemcourseids = array();
+        if ($roleassign == 0) {
+            if ($enrol = enrol_get_plugin('manual'))
+                $roleassign = $enrol->get_config('roleid');
+            else {
+                $problemcourseids[] = $courseid;
+                continue;
             }
         }
-        rs_close($rs);
+
+        foreach ($SESSION->bulk_users as $userid) {
+            if (enrol_try_internal_enrol($courseid, $userid, $roleassign)) {
+                foreach ($groupids as $groupid) {
+                    groups_add_member($groupid, $userid);
+                }
+            }
+            else $problemcourseids[] = $courseid;
+        }
     }
 
-    // we're done, exit now
-    admin_externalpage_print_header();
+    if (count($problemcourseids)) {
+        global $OUTPUT;
+
+        echo $OUTPUT->header();
+        html_writer::tag('p', advuserbulk_get_string('nointernalenrol', $pluginname, implode(', ', $problemcourseids)));
+        echo $OUTPUT->footer();
+        die;
+    }
+
     redirect($return, get_string('changessaved'));
 }
 
@@ -205,8 +213,8 @@ $selcoursenames = gen_course_list('', $SESSION->bulk_courses);
 // generate the list of groups names from the selected courses.
 // groups with the same name appear only once
 $groupnames = array();
-foreach ($SESSION->bulk_courses as $course) {
-    $cgroups = groups_get_all_groups($course);
+foreach ($SESSION->bulk_courses as $courseid) {
+    $cgroups = groups_get_all_groups($courseid);
     foreach ($cgroups as $cgroup) {
         if (!in_array($cgroup->name, $groupnames)) {
             $groupnames[] = $cgroup->name;
@@ -225,8 +233,8 @@ $groupnames = implode(' ', $groupnames);
 
 // get the system roles list and generate html code for role select control
 $roles = array();
-foreach ($SESSION->bulk_courses as $course) {
-    $context = get_context_instance(CONTEXT_COURSE, $course);
+foreach ($SESSION->bulk_courses as $courseid) {
+    $context = get_context_instance(CONTEXT_COURSE, $courseid);
     $courseroles = get_assignable_roles($context, 'name', ROLENAME_ORIGINAL);
     if (empty($roles)) {
         $roles = $courseroles;
@@ -234,7 +242,7 @@ foreach ($SESSION->bulk_courses as $course) {
         $roles = array_intersect_key($roles, $courseroles);
     }
 }
-$roles[0] = get_string('default', $pluginname, NULL, $langdir);
+$roles[0] = advuserbulk_get_string('default', $pluginname);
 
 $rolenames = '';
 foreach ($roles as $key => $name) {
@@ -246,17 +254,17 @@ foreach ($roles as $key => $name) {
 }
 
 // print the general page
-admin_externalpage_print_header();
+echo $OUTPUT->header();
 ?>
 <div id="addmembersform">
-    <h3 class="main"><?php echo get_string('title', $pluginname, NULL, $langdir) ?></h3>
+    <h3 class="main"><?php echo advuserbulk_get_string('title', $pluginname) ?></h3>
 
     <form id="addform" method="post" action="index.php">
-        <table cellpadding="6" class="generaltable generalbox groupmanagementtable boxaligncenter" summary="">
+        <table cellpadding="6" class="selectcourses generaltable generalbox boxaligncenter" summary="">
             <tr>
-                <td valign="top">
+              <td id="existingcell">
                     <p>
-                        <label for="allcourses"><?php echo get_string('allcourses', $pluginname, NULL, $langdir) ?></label>
+                        <label for="allcourses"><?php echo advuserbulk_get_string('allcourses', $pluginname) ?></label>
                     </p>
                     <select name="allcourses[]" size="20" id="allcourses" multiple="multiple"
                             onfocus="document.getElementById('addform').add.disabled=false;
@@ -285,24 +293,17 @@ admin_externalpage_print_header();
                         }
                     ?>
                 </td>
-                <td align="center" valign="top">
-                    <?php check_theme_arrows(); ?>
-                    <p class="arrow_button"><br />
-                        <input name="add" id="add" type="submit" disabled value="<?php echo '&nbsp;' . $THEME->rarrow . ' &nbsp; &nbsp; ' . get_string('add'); ?>" title="<?php print_string('add'); ?>" />
-                        <br />
-                        <input name="remove" id="remove" type="submit" disabled value="<?php echo '&nbsp; ' . $THEME->larrow . ' &nbsp; &nbsp; ' . get_string('remove'); ?>" title="<?php print_string('remove'); ?>" />
-                    </p>
-                    <br />
-                    <label for="hidden">
-                    <?php print_string('hiddenassign') ?> <br />
-                        <input type="checkbox" name="hidden" value="1" <?php if ($hidden)
-                            echo 'checked ' ?>/>
-                         <img src="<?php echo $CFG->pixpath; ?>/t/hide.gif" alt="<?php print_string('hiddenassign') ?>" class="hide-show-image" />
-                     </label>
+              <td id="buttonscell">
+                  <div id="addcontrols">
+                        <input name="add" id="add" type="submit" disabled value="<?php echo '&nbsp;' . $OUTPUT->rarrow() . ' &nbsp; &nbsp; ' . get_string('add'); ?>" title="<?php print_string('add'); ?>" />
+                  </div>
+                  <div id="removecontrols">
+                        <input name="remove" id="remove" type="submit" disabled value="<?php echo '&nbsp; ' . $OUTPUT->larrow() . ' &nbsp; &nbsp; ' . get_string('remove'); ?>" title="<?php print_string('remove'); ?>" />
+                  </div>
                  </td>
-                 <td valign="top">
+          <td id="potentialcell">
                      <p>
-                         <label for="selcourses"><?php echo get_string('selectedcourses', $pluginname, NULL, $langdir) ?></label>
+                         <label for="selcourses"><?php echo advuserbulk_get_string('selectedcourses', $pluginname) ?></label>
                      </p>
                      <select name="selcourses[]" size="20" id="selcourses" multiple="multiple"
                              onfocus="document.getElementById('addform').remove.disabled=false;
@@ -317,14 +318,14 @@ admin_externalpage_print_header();
                 </tr>
                 <tr>
                     <td align="center">
-                        <label for="roleassign"><?php echo get_string('roletoset', $pluginname, NULL, $langdir) ?></label>
+                        <label for="roleassign"><?php echo advuserbulk_get_string('roletoset', $pluginname) ?></label>
                         <br />
                         <select name="roleassign" id="roleassign" size="1">
                         <?php echo $rolenames ?>
                                 </select>
                     </td>
                     <td align="center">
-                        <label for="groups"><?php echo get_string('autogroup', $pluginname, NULL, $langdir) ?></label>
+                        <label for="groups"><?php echo advuserbulk_get_string('autogroup', $pluginname) ?></label>
                         <br />
                         <select name="groups[]" id="groups" size="10" multiple="multiple" >
                             <?php echo $groupnames; ?>
@@ -333,7 +334,7 @@ admin_externalpage_print_header();
                 </tr>
                 <tr><td></td><td align="center">
                         <p><input type="submit" name="cancel" value="<?php echo get_string('cancel') ?>" />
-                            <input type="submit" name="accept" value="<?php echo get_string('accept', $pluginname, NULL, $langdir) ?>" /></p>
+                            <input type="submit" name="accept" value="<?php echo advuserbulk_get_string('accept', $pluginname) ?>" /></p>
                     </td>
                 </tr>
 
@@ -341,5 +342,5 @@ admin_externalpage_print_header();
     </form>
 </div>
 <?php
-    admin_externalpage_print_footer();
+    echo $OUTPUT->footer();
 ?>
