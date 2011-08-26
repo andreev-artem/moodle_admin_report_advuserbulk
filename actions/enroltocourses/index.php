@@ -144,7 +144,11 @@ if ($confirm) {
         foreach ($SESSION->bulk_users as $userid) {
             if (enrol_try_internal_enrol($courseid, $userid, $roleassign)) {
                 foreach ($groupids as $groupid) {
-                    groups_add_member($groupid, $userid);
+                    try {
+                        groups_add_member($groupid, $userid);
+                    } catch(Exception $e) {
+                        
+                    }
                 }
             }
             else $problemcourseids[] = $courseid;
@@ -156,6 +160,7 @@ if ($confirm) {
 
         echo $OUTPUT->header();
         html_writer::tag('p', advuserbulk_get_string('nointernalenrol', $pluginname, implode(', ', $problemcourseids)));
+        echo $OUTPUT->continue_button($return);
         echo $OUTPUT->footer();
         die;
     }
