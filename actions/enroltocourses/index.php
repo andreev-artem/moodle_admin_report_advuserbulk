@@ -236,26 +236,17 @@ foreach ($groupnames as $key => $name) {
 
 $groupnames = implode(' ', $groupnames);
 
-// get the system roles list and generate html code for role select control
-$roles = array();
-foreach ($SESSION->bulk_courses as $courseid) {
-    $context = get_context_instance(CONTEXT_COURSE, $courseid);
-    $courseroles = get_assignable_roles($context, 'name', ROLENAME_ORIGINAL);
-    if (empty($roles)) {
-        $roles = $courseroles;
-    } else {
-        $roles = array_intersect_key($roles, $courseroles);
-    }
-}
-$roles[0] = advuserbulk_get_string('default', $pluginname);
+$courseroles = get_roles_for_contextlevels(CONTEXT_COURSE);
+$roles = array_intersect_key(get_all_roles(), array_combine($courseroles, $courseroles));
+$roles[0] = (object) array('name' => advuserbulk_get_string('default', $pluginname));
 
 $rolenames = '';
-foreach ($roles as $key => $name) {
+foreach ($roles as $key => $role) {
     $rolenames .= '<option value="' . $key . '"';
     if ($key == $roleassign) {
         $rolenames .= ' selected ';
     }
-    $rolenames .= '>' . $name . '</option> ';
+    $rolenames .= '>' . $role->name . '</option> ';
 }
 
 // print the general page
