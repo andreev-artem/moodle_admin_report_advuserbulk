@@ -11,13 +11,15 @@ class user_bulk_action_form extends moodleform {
         $mform =& $this->_form;
 
         $syscontext = get_context_instance(CONTEXT_SYSTEM);
-        $actions = array(0=>get_string('choose').'...');
+        $actions = array();
         $plugins = get_list_of_plugins($CFG->admin.'/report/advuserbulk/actions', 'CVS');
         foreach ($plugins as $dir) {
             if (check_action_capabilities($dir)) {
                 $actions[$dir] = advuserbulk_get_string('pluginname', ACTIONS_LANG_PREFIX.$dir);
             }
         }
+        asort($actions);
+        $actions = array_merge(array(0 => get_string('choose').'...'), $actions);
 
         $objs = array();
         $objs[] =& $mform->createElement('select', 'action', null, $actions);
