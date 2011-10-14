@@ -131,12 +131,12 @@ if ($confirm) {
             }
         }
 
-        $problemcourseids = array();
+        $courseswithoutinternalenrol = array();
         if ($roleassign == 0) {
             if ($enrol = enrol_get_plugin('manual'))
                 $roleassign = $enrol->get_config('roleid');
             else {
-                $problemcourseids[] = $courseid;
+                $courseswithoutinternalenrol[] = $courseid;
                 continue;
             }
         }
@@ -151,15 +151,17 @@ if ($confirm) {
                     }
                 }
             }
-            else $problemcourseids[] = $courseid;
+            else  {
+                $courseswithoutinternalenrol[] = $courseid;
+            }
         }
     }
 
-    if (count($problemcourseids)) {
+    if (count($courseswithoutinternalenrol)) {
         global $OUTPUT;
 
         echo $OUTPUT->header();
-        html_writer::tag('p', advuserbulk_get_string('nointernalenrol', $pluginname, implode(', ', $problemcourseids)));
+        html_writer::tag('p', advuserbulk_get_string('nointernalenrol', $pluginname, implode(', ', $courseswithoutinternalenrol)));
         echo $OUTPUT->continue_button($return);
         echo $OUTPUT->footer();
         die;
@@ -237,7 +239,10 @@ foreach ($groupnames as $key => $name) {
 $groupnames = implode(' ', $groupnames);
 
 $courseroles = get_roles_for_contextlevels(CONTEXT_COURSE);
-$roles = array_intersect_key(get_all_roles(), array_combine($courseroles, $courseroles));
+$context = get_context_instance(CONTEXT_SYSTEM);
+list($courseviewroles, $ignored) = get_roles_with_cap_in_context($context, 'moodle/course:view');
+$enrolableroles = array_diff_key(array_combine($courseroles, $courseroles), $courseviewroles);
+$roles = array_intersect_key(get_all_roles(), $enrolableroles);
 $roles[0] = (object) array('name' => advuserbulk_get_string('default', $pluginname));
 
 $rolenames = '';
