@@ -18,37 +18,36 @@ if (empty($SESSION->bulk_users)) {
     redirect($return);
 }
 
-admin_externalpage_print_header();
-
 //TODO: add support for large number of users
 
 if ($confirm and confirm_sesskey()) {
-    $in = implode(',', $SESSION->bulk_users);
-    if ($rs = get_recordset_select('user', "id IN ($in)", '', 'id, username, secret, confirmed, auth, firstname, lastname')) {
-        while ($user = rs_fetch_next_record($rs)) {
+    list($in, $params) = $DB->get_in_or_equal($SESSION->bulk_users);
+    if ($rs = $DB->get_recordset_select('user', "id $in", $params, '', 'id, username, secret, confirmed, auth, firstname, lastname')) {
+        foreach ($rs as $user) {
             if ($user->confirmed) {
                 continue;
             }
             $auth = get_auth_plugin($user->auth);
-            $result = $auth->user_confirm(addslashes($user->username), addslashes($user->secret));
+            $result = $auth->user_confirm($user->username, $user->secret);
             if ($result != AUTH_CONFIRM_OK && $result != AUTH_CONFIRM_ALREADY) {
-                notify(get_string('usernotconfirmed', '', fullname($user, true)));
+                echo $OUTPUT->notification(get_string('usernotconfirmed', '', fullname($user, true)));
             }
         }
-        rs_close($rs);
+        $rs->close();
     }
     redirect($return, get_string('changessaved'));
-
 } else {
-    $in = implode(',', $SESSION->bulk_users);
-    $userlist = get_records_select_menu('user', "id IN ($in)", 'fullname', 'id,'.sql_fullname().' AS fullname');
+    echo $OUTPUT->header();
+
+    list($in, $params) = $DB->get_in_or_equal($SESSION->bulk_users);
+    $userlist = $DB->get_records_select_menu('user', "id $in", $params, 'fullname', 'id,'.$DB->sql_fullname().' AS fullname');
     $usernames = implode(', ', $userlist);
-    $optionsyes = array();
-    $optionsyes['confirm'] = 1;
-    $optionsyes['sesskey'] = sesskey();
-    print_heading(get_string('confirmation', 'admin'));
-    notice_yesno(get_string('confirmcheckfull', '', $usernames), 'index.php', $return, $optionsyes, NULL, 'post', 'get');
+    echo $OUTPUT->heading(get_string('confirmation', 'admin'));
+    $formcontinue = new single_button(new moodle_url('index.php', array('confirm' => 1)), get_string('yes'));
+    $formcancel = new single_button(new moodle_url($return), get_string('no'), 'get');
+    echo $OUTPUT->confirm(get_string('confirmcheckfull', '', $usernames), $formcontinue, $formcancel);
+
+    echo $OUTPUT->footer();
 }
 
-admin_externalpage_print_footer();
 ?>

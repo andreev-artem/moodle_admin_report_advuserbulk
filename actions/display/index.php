@@ -22,12 +22,12 @@ $usercount = count($users);
 
 $strnever = get_string('never');
 
-admin_externalpage_print_header();
+echo $OUTPUT->header();
 
-$countries = get_list_of_countries();
+$countries = get_string_manager()->get_list_of_countries(true);
 
 foreach ($users as $key => $id) {
-    $user = get_record('user', 'id', $id, null, null, null, null, 'id, firstname, lastname, username, email, country, lastaccess, city');
+    $user = $DB->get_record('user', array('id'=>$id), 'id, firstname, lastname, username, email, country, lastaccess, city');
     $user->fullname = fullname($user, true);
     $user->country = @$countries[$user->country];
     unset($user->firstname);
@@ -48,6 +48,7 @@ function sort_compare($a, $b) {
 }
 usort($users, 'sort_compare');
 
+$table = new html_table();
 $table->width = "95%";
 $columns = array('fullname', /*'username', */'email', 'city', 'country', 'lastaccess');
 foreach ($columns as $column) {
@@ -57,7 +58,7 @@ foreach ($columns as $column) {
         $columndir = 'asc';
     } else {
         $columndir = $dir == 'asc' ? 'desc' : 'asc';
-        $columnicon = ' <img src="'.$CFG->pixpath.'/t/'.($dir == 'asc' ? 'down' : 'up' ).'.gif" alt="" />';
+        $columnicon = ' <img src="'.$OUTPUT->pix_url('t/'.($dir == 'asc' ? 'down' : 'up' )).'f" alt="" />';
     }
     $table->head[] = '<a href="index.php?sort='.$column.'&amp;dir='.$columndir.'">'.$strtitle.'</a>'.$columnicon;
     $table->align[] = 'left';
@@ -74,10 +75,10 @@ foreach($users as $user) {
     );
 }
 
-print_heading("$usercount / $usertotal ".get_string('users'));
-print_table($table);
+echo $OUTPUT->heading("$usercount / $usertotal ".get_string('users'));
+echo html_writer::table($table);
 
-print_continue($return);
+echo $OUTPUT->continue_button($return);
 
-admin_externalpage_print_footer();
+echo $OUTPUT->footer();
 ?>

@@ -1,6 +1,6 @@
 <?php
 /**
- * user bulk action script for batch user enrolment
+ * user bulk action script for batch role assigning
  */
 require_once('../../../../../config.php');
 require_once($CFG->libdir . '/adminlib.php');
@@ -12,7 +12,6 @@ $accept         = optional_param('accept', 0, PARAM_BOOL);
 $confirm        = optional_param('confirm', 0, PARAM_BOOL);
 $cancel         = optional_param('cancel', 0, PARAM_BOOL);
 $searchtext     = optional_param('searchtext', '', PARAM_RAW);
-$groups         = optional_param('groups', '', PARAM_CLEAN);
 $roleassign     = optional_param('roleassign', '', PARAM_RAW);
 $showall        = optional_param('showall', 0, PARAM_BOOL);
 $listadd        = optional_param('add', 0, PARAM_BOOL);
@@ -20,7 +19,7 @@ $listremove     = optional_param('remove', 0, PARAM_BOOL);
 $removeall      = optional_param('removeall', 0, PARAM_BOOL);
 
 admin_externalpage_setup('reportadvuserbulk');
-check_action_capabilities('enroltocourses', true);
+check_action_capabilities('assignroleincourse', true);
 
 $return = $CFG->wwwroot . '/' . $CFG->admin . '/report/advuserbulk/user_bulk.php';
 
@@ -29,7 +28,7 @@ if ($showall) {
 }
 
 $strsearch = get_string('search');
-$pluginname = ACTIONS_LANG_PREFIX.'enroltocourses';
+$pluginname = ACTIONS_LANG_PREFIX.'assignroleincourse';
 
 if (empty($SESSION->bulk_users) || $cancel) {
     redirect($return);
@@ -77,26 +76,14 @@ if ($accept) {
     }
 
     // generate the message
-    $confmsg = advuserbulk_get_string('confirmpart1', $pluginname) . '<b>' . $usernames . '</b>';
-    $confmsg .= advuserbulk_get_string('confirmpart2', $pluginname);
-    $confmsg .= '<b>' . implode('<br />', $courselist) . '</b>';
-    if (!empty($groups)) {
-        $confmsg .= advuserbulk_get_string('confirmpart3', $pluginname) . '<b>' . s(implode(', ', $groups), false) . '</b>';
-    
-        unset($SESSION->groups);
-        foreach ($groups as $group) {
-            $SESSION->groups[] = $group;
-        }
-    }
+    $role = $DB->get_record('role', array('id' => $roleassign));
+    $rolename = $role->name;
+    $confmsg = advuserbulk_get_string('confirmpart1', $pluginname) . '<b>' . $rolename . '</b>';
 
-    // get system roles info and add the selected role to the message
-    if ($roleassign != 0) {
-        $role = $DB->get_record('role', array('id' => $roleassign));
-        $rolename = $role->name;
-    } else {
-        $rolename = advuserbulk_get_string('default', $pluginname);
-    }
-    $confmsg .= advuserbulk_get_string('confirmpart4', $pluginname) . '<b>' . $rolename . '</b>?';
+    $confmsg .= advuserbulk_get_string('confirmpart2', $pluginname) . '<b>' . $usernames . '</b>';
+
+    $confmsg .= advuserbulk_get_string('confirmpart3', $pluginname);
+    $confmsg .= '<b>' . implode('<br />', $courselist) . '</b>?';
 
     $optionsyes['confirm'] = true;
     $optionsyes['roleassign'] = $roleassign;
@@ -123,48 +110,18 @@ if ($confirm) {
 
     // for each course, get the default role if needed and check the selected group
     foreach ($SESSION->bulk_courses as $courseid) {
-        $groupids = array();
-        foreach ($SESSION->groups as $group) {
-            $groupid = groups_get_group_by_name($courseid, stripslashes($group));
-            if ($groupid) {
-                $groupids[] = $groupid;
-            }
-        }
-
-        $courseswithoutinternalenrol = array();
-        if ($roleassign == 0) {
-            if ($enrol = enrol_get_plugin('manual'))
-                $roleassign = $enrol->get_config('roleid');
-            else {
-                $courseswithoutinternalenrol[] = $courseid;
+        $context = get_context_instance(CONTEXT_COURSE, $courseid, MUST_EXIST);
+        list($courseviewroles, $ignored) = get_roles_with_cap_in_context($context, 'moodle/course:view');
+        
+        foreach ($SESSION->bulk_users as $userid) {
+            if (array_key_exists($roleassign, $courseviewroles)) {
+                role_assign($roleassign, $userid, $context->id);
                 continue;
             }
-        }
-
-        foreach ($SESSION->bulk_users as $userid) {
-            if (enrol_try_internal_enrol($courseid, $userid, $roleassign)) {
-                foreach ($groupids as $groupid) {
-                    try {
-                        groups_add_member($groupid, $userid);
-                    } catch(Exception $e) {
-                        
-                    }
-                }
-            }
-            else  {
-                $courseswithoutinternalenrol[] = $courseid;
+            else {
+                throw new coding_exception("Can't assign role $roleassign to user $userid");
             }
         }
-    }
-
-    if (count($courseswithoutinternalenrol)) {
-        global $OUTPUT;
-
-        echo $OUTPUT->header();
-        html_writer::tag('p', advuserbulk_get_string('nointernalenrol', $pluginname, implode(', ', $courseswithoutinternalenrol)));
-        echo $OUTPUT->continue_button($return);
-        echo $OUTPUT->footer();
-        die;
     }
 
     redirect($return, get_string('changessaved'));
@@ -217,33 +174,9 @@ function gen_course_list($strfilter = '', $arrayfilter = NULL, $filtinvert = fal
 $coursenames = gen_course_list($searchtext, $SESSION->bulk_courses, true);
 $selcoursenames = gen_course_list('', $SESSION->bulk_courses);
 
-// generate the list of groups names from the selected courses.
-// groups with the same name appear only once
-$groupnames = array();
-foreach ($SESSION->bulk_courses as $courseid) {
-    $cgroups = groups_get_all_groups($courseid);
-    foreach ($cgroups as $cgroup) {
-        if (!in_array($cgroup->name, $groupnames)) {
-            $groupnames[] = $cgroup->name;
-        }
-    }
-}
-
-sort($groupnames);
-
-// generate html code for the group select control
-foreach ($groupnames as $key => $name) {
-    $groupnames[$key] = '<option value="' . s($name, true) . '" >' . s($name, true) . '</option>';
-}
-
-$groupnames = implode(' ', $groupnames);
-
-$courseroles = get_roles_for_contextlevels(CONTEXT_COURSE);
 $context = get_context_instance(CONTEXT_SYSTEM);
 list($courseviewroles, $ignored) = get_roles_with_cap_in_context($context, 'moodle/course:view');
-$enrolableroles = array_diff_key(array_combine($courseroles, $courseroles), $courseviewroles);
-$roles = array_intersect_key(get_all_roles(), $enrolableroles);
-$roles[0] = (object) array('name' => advuserbulk_get_string('default', $pluginname));
+$roles = array_intersect_key(get_all_roles(), $courseviewroles);
 
 $rolenames = '';
 foreach ($roles as $key => $role) {
@@ -324,13 +257,6 @@ echo $OUTPUT->header();
                         <select name="roleassign" id="roleassign" size="1">
                         <?php echo $rolenames ?>
                                 </select>
-                    </td>
-                    <td align="center">
-                        <label for="groups"><?php echo advuserbulk_get_string('autogroup', $pluginname) ?></label>
-                        <br />
-                        <select name="groups[]" id="groups" size="10" multiple="multiple" >
-                            <?php echo $groupnames; ?>
-                        </select>
                     </td>
                 </tr>
                 <tr><td></td><td align="center">
